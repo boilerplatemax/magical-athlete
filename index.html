@@ -2,34 +2,80 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Spellsprint</title>
 <style>
-  html,body{margin:0;height:100%;background:#2B1E3F;overflow:hidden;
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:#2B1E3F;overflow:hidden;touch-action:none;
     font-family:ui-monospace,Menlo,Consolas,monospace;color:#FFF8F0;}
   #gl{display:block;width:100vw;height:100vh;image-rendering:pixelated;image-rendering:crisp-edges;}
-  #panel{position:fixed;top:10px;right:10px;background:rgba(43,30,63,.82);
-    border:2px solid #A45CFF;border-radius:10px;padding:10px 12px;width:210px;
-    font-size:12px;line-height:1.5;user-select:none;backdrop-filter:blur(2px);}
-  #panel h1{font-size:14px;margin:0 0 6px;color:#FFD23F;letter-spacing:1px;}
+
+  #tag{position:fixed;left:12px;top:max(10px,env(safe-area-inset-top));font-size:16px;
+    color:#FFD23F;letter-spacing:2px;text-shadow:2px 2px 0 #A45CFF;pointer-events:none;}
+
+  /* turn / status banner */
+  #status{position:fixed;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    background:rgba(43,30,63,.8);border:2px solid #FFD23F;border-radius:12px;padding:6px 16px;
+    font-size:15px;font-weight:bold;letter-spacing:1px;white-space:nowrap;pointer-events:none;
+    text-shadow:1px 1px 0 #2B1E3F;max-width:90vw;overflow:hidden;text-overflow:ellipsis;}
+
+  /* gear + settings */
+  #gear{position:fixed;top:max(8px,env(safe-area-inset-top));right:10px;width:44px;height:44px;
+    border-radius:10px;background:rgba(43,30,63,.82);border:2px solid #A45CFF;color:#FFD23F;
+    font-size:20px;cursor:pointer;z-index:20;}
+  #panel{position:fixed;top:60px;right:10px;background:rgba(43,30,63,.92);
+    border:2px solid #A45CFF;border-radius:10px;padding:10px 12px;width:220px;
+    font-size:12px;line-height:1.5;user-select:none;z-index:19;display:none;}
+  #panel.open{display:block;}
+  #panel h1{font-size:13px;margin:0 0 6px;color:#FFD23F;letter-spacing:1px;}
   #panel label{display:block;margin-top:8px;color:#FFE8B0;}
   #panel .row{display:flex;gap:4px;margin-top:3px;}
-  #panel button{flex:1;background:#3D7BFF;color:#FFF8F0;border:0;border-radius:6px;
+  #panel button{flex:1;min-height:34px;background:#3D7BFF;color:#FFF8F0;border:0;border-radius:6px;
     padding:5px 0;font:inherit;font-size:11px;cursor:pointer;}
   #panel button.on{background:#FF4D5E;}
-  #panel input[type=range]{width:100%;accent-color:#FFD23F;margin:2px 0 0;}
+  #panel input[type=range]{width:100%;accent-color:#FFD23F;margin:2px 0 0;height:28px;}
   #panel .val{float:right;color:#5BD15B;}
-  #hud{position:fixed;left:10px;bottom:8px;font-size:11px;color:#FFE8B0;
-    text-shadow:1px 1px 0 #2B1E3F;}
-  #tag{position:fixed;left:12px;top:10px;font-size:18px;color:#FFD23F;
-    letter-spacing:2px;text-shadow:2px 2px 0 #A45CFF;}
+
+  /* big roll button (touch) */
+  #roll{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);
+    min-width:220px;min-height:64px;padding:0 30px;border:0;border-radius:16px;
+    background:#FF4D5E;color:#FFF8F0;font:inherit;font-size:22px;font-weight:bold;letter-spacing:2px;
+    box-shadow:0 6px 0 #A4323f, 0 8px 18px rgba(0,0,0,.4);cursor:pointer;display:none;z-index:15;
+    text-shadow:1px 1px 0 #7a1f2a;animation:pulse 1.1s ease-in-out infinite;}
+  #roll:active{transform:translateX(-50%) translateY(4px);box-shadow:0 2px 0 #A4323f;}
+  #roll.show{display:block;}
+  @keyframes pulse{0%,100%{box-shadow:0 6px 0 #A4323f,0 8px 18px rgba(0,0,0,.4);}
+    50%{box-shadow:0 6px 0 #A4323f,0 8px 26px rgba(255,77,94,.6);}}
+
+  /* fast-forward toggle */
+  #ff{position:fixed;right:10px;bottom:max(18px,env(safe-area-inset-bottom));min-width:56px;min-height:48px;
+    border-radius:12px;background:rgba(43,30,63,.82);border:2px solid #FFD23F;color:#FFD23F;
+    font-size:18px;cursor:pointer;z-index:15;}
+  #ff.on{background:#FFD23F;color:#2B1E3F;}
+
+  /* results overlay */
+  #over{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+    background:rgba(43,30,63,.78);z-index:30;text-align:center;padding:20px;}
+  #over.show{display:flex;}
+  #over h2{font-size:30px;color:#FFD23F;margin:0 0 6px;text-shadow:3px 3px 0 #A45CFF;letter-spacing:2px;}
+  #over .places{font-size:18px;line-height:1.8;margin:8px 0 18px;}
+  #over button{min-height:60px;padding:0 34px;border:0;border-radius:14px;background:#5BD15B;color:#123a12;
+    font:inherit;font-size:20px;font-weight:bold;letter-spacing:1px;cursor:pointer;box-shadow:0 5px 0 #2f8a2f;}
+  #over button:active{transform:translateY(3px);box-shadow:0 2px 0 #2f8a2f;}
+
+  #hud{position:fixed;left:10px;bottom:max(8px,env(safe-area-inset-bottom));font-size:10px;color:#FFE8B0;
+    opacity:.75;text-shadow:1px 1px 0 #2B1E3F;pointer-events:none;}
+  #rot{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#2B1E3F;
+    z-index:40;font-size:18px;color:#FFD23F;text-align:center;padding:30px;}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="tag">SPELLSPRINT</div>
+<div id="status">Get ready...</div>
+<button id="gear">&#9881;</button>
 <div id="panel">
-  <h1>SETTINGS (M1)</h1>
+  <h1>SETTINGS</h1>
   <label>Internal resolution</label>
   <div class="row" id="resRow">
     <button data-res="240">240</button>
@@ -45,489 +91,631 @@
   </div>
   <label>Color levels <span class="val" id="levVal">6</span></label>
   <input id="levels" type="range" min="2" max="16" value="6">
+  <label>Game speed <span class="val" id="spdVal">1.0x</span></label>
+  <input id="speed" type="range" min="50" max="250" value="100">
+</div>
+
+<button id="roll">TAP TO ROLL</button>
+<button id="ff" title="Fast forward">&#9193;</button>
+
+<div id="over">
+  <h2 id="overTitle">RACE OVER</h2>
+  <div class="places" id="overPlaces"></div>
+  <button id="again">NEW RACE</button>
 </div>
 <div id="hud"></div>
+<div id="rot">Rotate your device to landscape for the best party.</div>
 
 <script>
 "use strict";
 //============================================================================
-// SPELLSPRINT  -  Milestone 1: renderer, low-res FBO, dither/palette,
-// flat shading, one racer on a test track.
+// SPELLSPRINT  -  Milestone 2
+// Track model, bonk-to-roll dice, hopping movement, passing, turn flow,
+// full no-powers race ending when 2 racers finish.  Touch / mobile ready.
 //============================================================================
 
-const TAU = Math.PI * 2;
+const TAU = Math.PI*2;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
 
-// ---- toy-box palette (also used as source colors for quantization) --------
 const PAL = {
-  sky:   [0x6E/255,0xC6/255,0xFF/255],
-  grass: [0x5B/255,0xD1/255,0x5B/255],
-  track: [0xFF/255,0xE8/255,0xB0/255],
-  red:   [0xFF/255,0x4D/255,0x5E/255],
-  blue:  [0x3D/255,0x7B/255,0xFF/255],
-  yellow:[0xFF/255,0xD2/255,0x3F/255],
-  purple:[0xA4/255,0x5C/255,0xFF/255],
-  orange:[0xFF/255,0x9A/255,0x3C/255],
-  shadow:[0x2B/255,0x1E/255,0x3F/255],
-  white: [0xFF/255,0xF8/255,0xF0/255],
+  sky:[0x6E/255,0xC6/255,0xFF/255], grass:[0x5B/255,0xD1/255,0x5B/255],
+  track:[0xFF/255,0xE8/255,0xB0/255], red:[0xFF/255,0x4D/255,0x5E/255],
+  blue:[0x3D/255,0x7B/255,0xFF/255], yellow:[0xFF/255,0xD2/255,0x3F/255],
+  purple:[0xA4/255,0x5C/255,0xFF/255], orange:[0xFF/255,0x9A/255,0x3C/255],
+  shadow:[0x2B/255,0x1E/255,0x3F/255], white:[0xFF/255,0xF8/255,0xF0/255],
 };
-function shade(c, f){ return [c[0]*f, c[1]*f, c[2]*f]; } // darken/lighten a palette color
+const shade=(c,f)=>[clamp(c[0]*f,0,1),clamp(c[1]*f,0,1),clamp(c[2]*f,0,1)];
 
 //============================================================================
-// mat4 math (column-major, WebGL layout)
+// mat4 (column-major)
 //============================================================================
 const M4 = {
-  ident(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
-  mul(a,b){ // a*b
-    const o = new Float32Array(16);
-    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
-      o[c*4+r] = a[0*4+r]*b[c*4+0] + a[1*4+r]*b[c*4+1] + a[2*4+r]*b[c*4+2] + a[3*4+r]*b[c*4+3];
-    }
-    return o;
-  },
+  ident(){ return new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]); },
+  mul(a,b){ const o=new Float32Array(16);
+    for(let c=0;c<4;c++)for(let r=0;r<4;r++)
+      o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+    return o; },
   translate(x,y,z){ const m=M4.ident(); m[12]=x;m[13]=y;m[14]=z; return m; },
   scale(x,y,z){ const m=M4.ident(); m[0]=x;m[5]=y;m[10]=z; return m; },
-  rotY(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[0]=c;m[2]=-s;m[8]=s;m[10]=c; return m; },
-  rotX(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[5]=c;m[6]=s;m[9]=-s;m[10]=c; return m; },
-  rotZ(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[0]=c;m[1]=s;m[4]=-s;m[5]=c; return m; },
-  perspective(fovy, aspect, near, far){
-    const f = 1/Math.tan(fovy/2), nf = 1/(near-far);
-    const m = new Float32Array(16);
-    m[0]=f/aspect; m[5]=f; m[10]=(far+near)*nf; m[11]=-1; m[14]=2*far*near*nf;
-    return m;
-  },
-  lookAt(eye, tgt, up){
-    const zx=eye[0]-tgt[0], zy=eye[1]-tgt[1], zz=eye[2]-tgt[2];
-    let zl=Math.hypot(zx,zy,zz)||1; const z=[zx/zl,zy/zl,zz/zl];
-    let xx=up[1]*z[2]-up[2]*z[1], xy=up[2]*z[0]-up[0]*z[2], xz=up[0]*z[1]-up[1]*z[0];
-    let xl=Math.hypot(xx,xy,xz)||1; const x=[xx/xl,xy/xl,xz/xl];
-    const y=[z[1]*x[2]-z[2]*x[1], z[2]*x[0]-z[0]*x[2], z[0]*x[1]-z[1]*x[0]];
-    return new Float32Array([
-      x[0],y[0],z[0],0,
-      x[1],y[1],z[1],0,
-      x[2],y[2],z[2],0,
-      -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
-      -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
-      -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1 ]);
-  },
-  // transform a point (w=1), ignoring projection
-  xform(m,p){
-    return [ m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12],
-             m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13],
-             m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14] ];
-  }
+  rotY(a){ const c=Math.cos(a),s=Math.sin(a),m=M4.ident(); m[0]=c;m[2]=-s;m[8]=s;m[10]=c; return m; },
+  rotX(a){ const c=Math.cos(a),s=Math.sin(a),m=M4.ident(); m[5]=c;m[6]=s;m[9]=-s;m[10]=c; return m; },
+  rotZ(a){ const c=Math.cos(a),s=Math.sin(a),m=M4.ident(); m[0]=c;m[1]=s;m[4]=-s;m[5]=c; return m; },
+  perspective(fovy,asp,n,f){ const t=1/Math.tan(fovy/2),nf=1/(n-f),m=new Float32Array(16);
+    m[0]=t/asp;m[5]=t;m[10]=(f+n)*nf;m[11]=-1;m[14]=2*f*n*nf; return m; },
+  lookAt(e,t,up){ let zx=e[0]-t[0],zy=e[1]-t[1],zz=e[2]-t[2],zl=Math.hypot(zx,zy,zz)||1;
+    const z=[zx/zl,zy/zl,zz/zl];
+    let xx=up[1]*z[2]-up[2]*z[1],xy=up[2]*z[0]-up[0]*z[2],xz=up[0]*z[1]-up[1]*z[0],xl=Math.hypot(xx,xy,xz)||1;
+    const x=[xx/xl,xy/xl,xz/xl];
+    const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+    return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,
+      -(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]); },
+  xform(m,p){ return [m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12],
+                      m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13],
+                      m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]]; }
 };
 
 //============================================================================
-// mesh builder: everything bakes into flat position/color arrays.
-// Non-indexed triangles. Flat shading means we never store normals.
+// mesh builder
 //============================================================================
-function Mesh(){ return { pos:[], col:[] }; }
+function Mesh(){ return {pos:[],col:[]}; }
 function hash2(i,j){ const h=Math.sin(i*12.9898+j*78.233)*43758.5453; return h-Math.floor(h); }
-
-function tri(mesh, mat, a,b,c, color){
-  const A=M4.xform(mat,a), B=M4.xform(mat,b), C=M4.xform(mat,c);
-  mesh.pos.push(A[0],A[1],A[2], B[0],B[1],B[2], C[0],C[1],C[2]);
-  for(let k=0;k<3;k++) mesh.col.push(color[0],color[1],color[2]);
-}
-
-function addBox(mesh, mat, sx,sy,sz, color){
-  const x=sx/2,y=sy/2,z=sz/2;
+function tri(m,mat,a,b,c,col){ const A=M4.xform(mat,a),B=M4.xform(mat,b),C=M4.xform(mat,c);
+  m.pos.push(A[0],A[1],A[2],B[0],B[1],B[2],C[0],C[1],C[2]);
+  for(let k=0;k<3;k++) m.col.push(col[0],col[1],col[2]); }
+function addBox(m,mat,sx,sy,sz,col){ const x=sx/2,y=sy/2,z=sz/2;
   const c=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]];
   const f=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
-  for(const q of f){ tri(mesh,mat,c[q[0]],c[q[1]],c[q[2]],color); tri(mesh,mat,c[q[0]],c[q[2]],c[q[3]],color); }
-}
-
-function addSphere(mesh, mat, r, color, latN, longN, jitter){
-  jitter = jitter||0;
-  const pts=[];
-  for(let i=0;i<=latN;i++){
-    const theta=i/latN*Math.PI, st=Math.sin(theta), ct=Math.cos(theta);
-    const row=[];
-    for(let j=0;j<=longN;j++){
-      const phi=j/longN*TAU;
-      const rr = r*(1 + (jitter? (hash2(i,j)*2-1)*jitter : 0));
-      row.push([st*Math.cos(phi)*rr, ct*rr, st*Math.sin(phi)*rr]);
-    }
-    pts.push(row);
-  }
-  for(let i=0;i<latN;i++) for(let j=0;j<longN;j++){
-    const a=pts[i][j], b=pts[i+1][j], c=pts[i+1][j+1], d=pts[i][j+1];
-    tri(mesh,mat,a,b,c,color); tri(mesh,mat,a,c,d,color);
-  }
-}
-
-function addCone(mesh, mat, r, h, color, seg){
-  const apex=[0,h,0];
-  for(let i=0;i<seg;i++){
-    const a0=i/seg*TAU, a1=(i+1)/seg*TAU;
-    const p0=[Math.cos(a0)*r,0,Math.sin(a0)*r], p1=[Math.cos(a1)*r,0,Math.sin(a1)*r];
-    tri(mesh,mat,p0,p1,apex,color);
-    tri(mesh,mat,p0,[0,0,0],p1,color);
-  }
-}
+  for(const q of f){ tri(m,mat,c[q[0]],c[q[1]],c[q[2]],col); tri(m,mat,c[q[0]],c[q[2]],c[q[3]],col);} }
+function addSphere(m,mat,r,col,latN,longN,jit){ jit=jit||0; const pts=[];
+  for(let i=0;i<=latN;i++){ const th=i/latN*Math.PI,st=Math.sin(th),ct=Math.cos(th),row=[];
+    for(let j=0;j<=longN;j++){ const ph=j/longN*TAU, rr=r*(1+(jit?(hash2(i,j)*2-1)*jit:0));
+      row.push([st*Math.cos(ph)*rr,ct*rr,st*Math.sin(ph)*rr]); } pts.push(row); }
+  for(let i=0;i<latN;i++)for(let j=0;j<longN;j++){
+    tri(m,mat,pts[i][j],pts[i+1][j],pts[i+1][j+1],col);
+    tri(m,mat,pts[i][j],pts[i+1][j+1],pts[i][j+1],col); } }
+function addCone(m,mat,r,h,col,seg){ const apex=[0,h,0];
+  for(let i=0;i<seg;i++){ const a0=i/seg*TAU,a1=(i+1)/seg*TAU;
+    const p0=[Math.cos(a0)*r,0,Math.sin(a0)*r],p1=[Math.cos(a1)*r,0,Math.sin(a1)*r];
+    tri(m,mat,p0,p1,apex,col); tri(m,mat,p0,[0,0,0],p1,col); } }
 
 //============================================================================
-// WebGL setup
+// GL + shaders (from M1)
 //============================================================================
-const canvas = document.getElementById("gl");
-const gl = canvas.getContext("webgl2", {antialias:false, alpha:false});
+const canvas=document.getElementById("gl");
+const gl=canvas.getContext("webgl2",{antialias:false,alpha:false});
 if(!gl){ document.body.innerHTML="<p style='padding:20px'>WebGL2 is required.</p>"; throw new Error("no webgl2"); }
+function compile(t,s){ const sh=gl.createShader(t); gl.shaderSource(sh,s); gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)+"\n"+s); return sh; }
+function program(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; }
 
-function compile(type, src){
-  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
-  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+"\n"+src);
-  return s;
-}
-function program(vs, fs){
-  const p=gl.createProgram();
-  gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
-  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
-  gl.linkProgram(p);
-  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  return p;
-}
+const sceneProg=program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aColor;
+uniform mat4 uProj,uView,uModel; out vec3 vColor; out vec3 vView;
+void main(){ vec4 v=uView*uModel*vec4(aPos,1.0); vView=v.xyz; vColor=aColor; gl_Position=uProj*v; }`,
+`#version 300 es
+precision highp float; in vec3 vColor; in vec3 vView; out vec4 o;
+uniform vec3 uLight,uLight2; uniform float uTint;
+void main(){ vec3 N=normalize(cross(dFdx(vView),dFdy(vView))); if(dot(N,-vView)<0.0)N=-N;
+  float nl=max(dot(N,uLight),0.0), nl2=max(dot(N,uLight2),0.0);
+  float light=0.34+0.60*nl+0.18*nl2; vec3 c=vColor*light; c=mix(c,vec3(1.0),uTint);
+  o=vec4(c,1.0); }`);
+const sU={proj:gl.getUniformLocation(sceneProg,"uProj"),view:gl.getUniformLocation(sceneProg,"uView"),
+  model:gl.getUniformLocation(sceneProg,"uModel"),light:gl.getUniformLocation(sceneProg,"uLight"),
+  light2:gl.getUniformLocation(sceneProg,"uLight2"),tint:gl.getUniformLocation(sceneProg,"uTint")};
 
-// ---- scene program: flat shading, normals from screen-space derivatives ----
-const sceneProg = program(`#version 300 es
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aColor;
-uniform mat4 uProj, uView, uModel;
-out vec3 vColor; out vec3 vView;
-void main(){
-  vec4 v = uView * uModel * vec4(aPos,1.0);
-  vView = v.xyz; vColor = aColor;
-  gl_Position = uProj * v;
-}`,`#version 300 es
-precision highp float;
-in vec3 vColor; in vec3 vView;
-out vec4 o;
-uniform vec3 uLight;   // view-space direction toward the key light
-uniform vec3 uLight2;  // view-space fill light
-void main(){
-  vec3 N = normalize(cross(dFdx(vView), dFdy(vView)));
-  if(dot(N, -vView) < 0.0) N = -N;            // force normal to face camera
-  float nl  = max(dot(N, uLight ), 0.0);
-  float nl2 = max(dot(N, uLight2), 0.0);
-  float light = 0.34 + 0.60*nl + 0.18*nl2;
-  o = vec4(vColor*light, 1.0);
-}`);
-const sceneU = {
-  proj: gl.getUniformLocation(sceneProg,"uProj"),
-  view: gl.getUniformLocation(sceneProg,"uView"),
-  model:gl.getUniformLocation(sceneProg,"uModel"),
-  light:gl.getUniformLocation(sceneProg,"uLight"),
-  light2:gl.getUniformLocation(sceneProg,"uLight2"),
-};
+const postProg=program(`#version 300 es
+out vec2 vUv; void main(){ vUv=vec2(gl_VertexID==2?2.0:0.0,gl_VertexID==1?2.0:0.0);
+  gl_Position=vec4(vUv*2.0-1.0,0.0,1.0); }`,
+`#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uTex; uniform vec2 uLowRes; uniform float uDither,uPattern,uLevels;
+const float bayer[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+void main(){ vec3 c=texture(uTex,vUv).rgb; ivec2 p=ivec2(floor(vUv*uLowRes/uPattern));
+  int idx=(p.y&3)*4+(p.x&3); float b=(bayer[idx]+0.5)/16.0-0.5; float steps=max(uLevels-1.0,1.0);
+  c+=b*uDither/steps; c=clamp(c,0.0,1.0); c=floor(c*steps+0.5)/steps; o=vec4(c,1.0); }`);
+const pU={tex:gl.getUniformLocation(postProg,"uTex"),lowRes:gl.getUniformLocation(postProg,"uLowRes"),
+  dither:gl.getUniformLocation(postProg,"uDither"),pattern:gl.getUniformLocation(postProg,"uPattern"),
+  levels:gl.getUniformLocation(postProg,"uLevels")};
 
-// ---- post program: nearest upscale + Bayer dither + palette quantization ---
-const postProg = program(`#version 300 es
-out vec2 vUv;
-void main(){
-  vUv = vec2(gl_VertexID==2 ? 2.0 : 0.0, gl_VertexID==1 ? 2.0 : 0.0);
-  gl_Position = vec4(vUv*2.0-1.0, 0.0, 1.0);
-}`,`#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 o;
-uniform sampler2D uTex;
-uniform vec2 uLowRes;
-uniform float uDither;   // 0..1
-uniform float uPattern;  // 1 or 2
-uniform float uLevels;   // quantization steps per channel
-const float bayer[16] = float[16](
-   0.0, 8.0, 2.0,10.0,
-  12.0, 4.0,14.0, 6.0,
-   3.0,11.0, 1.0, 9.0,
-  15.0, 7.0,13.0, 5.0);
-void main(){
-  vec3 c = texture(uTex, vUv).rgb;
-  ivec2 p = ivec2(floor(vUv*uLowRes / uPattern));
-  int idx = (p.y & 3)*4 + (p.x & 3);
-  float b = (bayer[idx]+0.5)/16.0 - 0.5;      // -0.5 .. 0.5
-  float steps = max(uLevels-1.0, 1.0);
-  c += b * uDither / steps;                   // dither offset of one quant step
-  c = clamp(c, 0.0, 1.0);
-  c = floor(c*steps + 0.5)/steps;             // quantize
-  o = vec4(c, 1.0);
-}`);
-const postU = {
-  tex: gl.getUniformLocation(postProg,"uTex"),
-  lowRes: gl.getUniformLocation(postProg,"uLowRes"),
-  dither: gl.getUniformLocation(postProg,"uDither"),
-  pattern:gl.getUniformLocation(postProg,"uPattern"),
-  levels: gl.getUniformLocation(postProg,"uLevels"),
-};
-
-//============================================================================
-// VAO upload
-//============================================================================
-function uploadMesh(mesh){
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  const pb=gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER,pb);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.pos),gl.STATIC_DRAW);
+function uploadMesh(m){ const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const pb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.pos),gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-  const cb=gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER,cb);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.col),gl.STATIC_DRAW);
+  const cb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,cb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.col),gl.STATIC_DRAW);
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
-  gl.bindVertexArray(null);
-  return { vao, count: mesh.pos.length/3 };
+  gl.bindVertexArray(null); return {vao,count:m.pos.length/3}; }
+
+//============================================================================
+// track
+//============================================================================
+let track;
+function buildTrack(){
+  const N=30, spaces=[];
+  for(let i=0;i<N;i++){
+    const x=i*1.75, z=Math.sin(i*0.42)*3.4 + Math.cos(i*0.17)*1.6;
+    spaces.push({pos:[x,0,z],type:'plain'});
+  }
+  track={spaces,N,finishIndex:N-1};
 }
+function trackTangent(i){ const a=track.spaces[Math.max(0,i-1)].pos,b=track.spaces[Math.min(track.N-1,i+1)].pos;
+  let dx=b[0]-a[0],dz=b[2]-a[2]; const l=Math.hypot(dx,dz)||1; return [dx/l,dz/l]; }
+function spaceWorld(i,lane){ i=clamp(i,0,track.N-1); const p=track.spaces[i].pos,t=trackTangent(i);
+  return [p[0]-t[1]*lane*0.44, 0.2, p[2]+t[0]*lane*0.44]; }
 
 //============================================================================
-// build the test scene (static) + a racer
+// scene (arena dressing + tiles along the track)
 //============================================================================
-const TILES = [];
 function buildScene(){
-  const m = Mesh();
-  // big grass slab
-  addBox(m, M4.translate(9,-0.3,0), 70,0.6,50, PAL.grass);
-  // a second grass tone patch for variety
-  addBox(m, M4.translate(9,-0.28,8), 30,0.6,10, shade(PAL.grass,0.88));
+  const m=Mesh();
+  const cx=track.spaces[Math.floor(track.N/2)].pos[0];
+  addBox(m,M4.translate(cx,-0.3,0),80,0.6,66,PAL.grass);
+  addBox(m,M4.translate(cx,-0.28,16),60,0.6,14,shade(PAL.grass,0.9));
 
-  // floating track of chunky tiles
-  for(let i=0;i<12;i++){
-    const x=i*2.3, z=Math.sin(i*0.55)*1.6;
-    TILES.push([x,z]);
-    const col = (i%2===0)? PAL.track : shade(PAL.track,0.9);
-    addBox(m, M4.translate(x,0,z), 2.0,0.4,2.0, col);
-    // little support stub so tiles read as floating platforms
-    addBox(m, M4.translate(x,-0.6,z), 0.5,1.2,0.5, shade(PAL.track,0.7));
-  }
+  for(let i=0;i<track.N;i++){ const p=track.spaces[i].pos;
+    const col=(i%2===0)?PAL.track:shade(PAL.track,0.9);
+    addBox(m,M4.translate(p[0],0,p[2]),1.5,0.4,1.5,col);
+    addBox(m,M4.translate(p[0],-0.7,p[2]),0.4,1.4,0.4,shade(PAL.track,0.7)); }
 
-  // start gate on first tile
-  const g0=TILES[0];
-  addBox(m, M4.translate(g0[0]-0.8,1.1,g0[1]-0.9), 0.35,2.2,0.35, PAL.blue);
-  addBox(m, M4.translate(g0[0]-0.8,1.1,g0[1]+0.9), 0.35,2.2,0.35, PAL.blue);
-  addBox(m, M4.translate(g0[0]-0.8,2.3,g0[1]),     0.35,0.5,2.3, PAL.yellow);
-  addCone(m,M4.translate(g0[0]-0.8,2.6,g0[1]),     0.35,0.6,PAL.red,6);
+  const s0=track.spaces[0].pos, t0=trackTangent(0);
+  const gx=s0[0]-t0[0]*1.3, gz=s0[2]-t0[1]*1.3;
+  addBox(m,M4.translate(gx,1.1,gz-1.1),0.35,2.2,0.35,PAL.blue);
+  addBox(m,M4.translate(gx,1.1,gz+1.1),0.35,2.2,0.35,PAL.blue);
+  addBox(m,M4.translate(gx,2.3,gz),0.35,0.5,2.6,PAL.yellow);
+  addCone(m,M4.translate(gx,2.6,gz),0.4,0.7,PAL.red,6);
 
-  // finish arch on last tile
-  const gN=TILES[TILES.length-1];
-  addBox(m, M4.translate(gN[0]+0.8,1.4,gN[1]-1.0), 0.4,2.8,0.4, PAL.purple);
-  addBox(m, M4.translate(gN[0]+0.8,1.4,gN[1]+1.0), 0.4,2.8,0.4, PAL.purple);
-  addBox(m, M4.translate(gN[0]+0.8,2.9,gN[1]),     0.4,0.5,2.6, PAL.red);
-  // flags on the arch
-  for(let f=0;f<3;f++){
-    const fz = gN[1]-0.8 + f*0.8;
-    addBox(m, M4.mul(M4.translate(gN[0]+0.8,3.35,fz),M4.rotZ(0.2)), 0.5,0.35,0.05, f%2?PAL.yellow:PAL.white);
-  }
+  const sN=track.spaces[track.N-1].pos, tN=trackTangent(track.N-1);
+  const fx=sN[0]+tN[0]*1.3, fz=sN[2]+tN[1]*1.3;
+  addBox(m,M4.translate(fx,1.4,fz-1.2),0.4,2.8,0.4,PAL.purple);
+  addBox(m,M4.translate(fx,1.4,fz+1.2),0.4,2.8,0.4,PAL.purple);
+  addBox(m,M4.translate(fx,2.9,fz),0.4,0.5,3.0,PAL.red);
+  for(let f=0;f<4;f++){ const ffz=fz-1.0+f*0.7;
+    addBox(m,M4.mul(M4.translate(fx,3.35,ffz),M4.rotZ(0.2)),0.5,0.35,0.05,f%2?PAL.yellow:PAL.white); }
 
-  // bleachers of bobbing blob spectators (static here, bob comes in M6)
-  for(let s=0;s<14;s++){
-    const x = (s%7)*3.2 - 1, z = -5.5 - Math.floor(s/7)*1.6, y = 0.4 + Math.floor(s/7)*0.8;
+  // spectators beside the track
+  for(let s=0;s<30;s++){ const along=(s/29)*track.spaces[track.N-1].pos[0];
+    const side=(s%2?1:-1), row=Math.floor((s%6)/3);
+    const z=(s%2?1:-1)*(8+row*1.4)+ (s%3)*0.6;
+    const y=0.4+row*0.7;
     const cols=[PAL.red,PAL.blue,PAL.yellow,PAL.purple,PAL.orange];
-    addSphere(m, M4.mul(M4.translate(x,y,z),M4.scale(1,1.2,1)), 0.5, cols[s%5], 4,6, 0.14);
-  }
-  // bleacher stand box
-  addBox(m, M4.translate(9,-0.2,-6.7), 20,1.0,2.4, shade(PAL.purple,0.42));
+    addSphere(m,M4.mul(M4.translate(along,y,z),M4.scale(1,1.2,1)),0.45,cols[s%5],4,6,0.14); }
 
-  // low-poly clouds
-  for(const c of [[2,7,-10],[14,8,-8],[20,6,-12],[-4,7,4]]){
-    addSphere(m, M4.translate(c[0],c[1],c[2]),1.3,PAL.white,4,6,0.18);
-    addSphere(m, M4.translate(c[0]+1.4,c[1]-0.2,c[2]),1.0,PAL.white,4,6,0.18);
-    addSphere(m, M4.translate(c[0]-1.3,c[1]-0.3,c[2]),0.9,PAL.white,4,6,0.18);
-  }
-
-  // bunting line between the gates
-  for(let i=0;i<10;i++){
-    const t=i/9, x = g0[0]-0.8 + t*(gN[0]-g0[0]+1.6);
-    const sag = Math.sin(t*Math.PI)*0.6;
-    const cols=[PAL.red,PAL.yellow,PAL.blue,PAL.white,PAL.orange];
-    addBox(m, M4.mul(M4.translate(x,3.1-sag,-1.4),M4.rotZ(0.1)), 0.22,0.3,0.05, cols[i%5]);
-  }
-
+  // clouds
+  for(const c of [[3,8,-14],[18,9,-12],[34,7,-16],[10,8,14],[44,9,10]]){
+    addSphere(m,M4.translate(c[0],c[1],c[2]),1.4,PAL.white,4,6,0.18);
+    addSphere(m,M4.translate(c[0]+1.5,c[1]-0.3,c[2]),1.0,PAL.white,4,6,0.18);
+    addSphere(m,M4.translate(c[0]-1.4,c[1]-0.3,c[2]),0.95,PAL.white,4,6,0.18); }
   return uploadMesh(m);
 }
 
-// Racer: lumpy body, head, googly eyes, noodle limbs, derpy face, a hat.
-// Built in local space, feet at y=0, facing +X.  Under ~210 tris.
-function buildRacer(teamCol){
-  const body = Mesh();
-  const skin = shade(PAL.orange, 1.05);
-  const dark = shade(teamCol, 0.6);
-
-  // legs (stubby noodles, splayed feet are the wide bottoms)
-  addBox(body, M4.mul(M4.translate(-0.05,0.17,-0.22),M4.rotZ(0.1)), 0.26,0.38,0.3, dark);
-  addBox(body, M4.mul(M4.translate( 0.05,0.17, 0.22),M4.rotZ(-0.1)),0.26,0.38,0.3, dark);
-
-  // lopsided body
-  addSphere(body, M4.mul(M4.translate(0,0.70,0),M4.scale(0.95,1.08,0.9)), 0.52, teamCol, 4,5, 0.14);
-
-  // arms (noodle, lopsided)
-  addBox(body, M4.mul(M4.translate(0.0,0.82,-0.52),M4.rotX(-0.5)), 0.17,0.5,0.17, teamCol);
-  addBox(body, M4.mul(M4.translate(0.0,0.86, 0.52),M4.rotX( 0.7)), 0.17,0.5,0.17, teamCol);
-
-  // head (slightly tilted, lumpy)
+//============================================================================
+// racer model
+//============================================================================
+function buildRacer(teamCol,feature){
+  const body=Mesh(), skin=shade(PAL.orange,1.05), dark=shade(teamCol,0.6);
+  addBox(body,M4.mul(M4.translate(-0.05,0.17,-0.22),M4.rotZ(0.1)),0.26,0.38,0.3,dark);
+  addBox(body,M4.mul(M4.translate(0.05,0.17,0.22),M4.rotZ(-0.1)),0.26,0.38,0.3,dark);
+  addSphere(body,M4.mul(M4.translate(0,0.70,0),M4.scale(0.95,1.08,0.9)),0.52,teamCol,4,5,0.14);
+  addBox(body,M4.mul(M4.translate(0,0.82,-0.52),M4.rotX(-0.5)),0.17,0.5,0.17,teamCol);
+  addBox(body,M4.mul(M4.translate(0,0.86,0.52),M4.rotX(0.7)),0.17,0.5,0.17,teamCol);
   const headY=1.40;
-  addSphere(body, M4.mul(M4.translate(0.02,headY,0),M4.rotZ(0.08)), 0.4, skin, 4,5, 0.1);
-
-  // eye whites on the +X (front) face
-  addSphere(body, M4.translate(0.30,headY+0.08,-0.17), 0.15, PAL.white, 2,4, 0.04);
-  addSphere(body, M4.translate(0.31,headY+0.10, 0.17), 0.15, PAL.white, 2,4, 0.04);
-
-  // nose
-  addCone(body, M4.mul(M4.translate(0.40,headY-0.04,0),M4.rotZ(-Math.PI/2)), 0.1,0.25, PAL.orange, 4);
-  // derpy mouth
-  addBox(body, M4.translate(0.37,headY-0.22,0), 0.06,0.07,0.28, shade(PAL.shadow,1.3));
-
-  // silly feature: a pointy party hat
-  addCone(body, M4.translate(0.0,headY+0.34,0), 0.3,0.6, PAL.purple, 6);
-
-  // pupils are a SEPARATE mesh so the googly eyes can jiggle independently
-  const pupils = Mesh();
-  addSphere(pupils, M4.translate(0.42,headY+0.08,-0.17), 0.07, PAL.shadow, 2,3, 0);
-  addSphere(pupils, M4.translate(0.43,headY+0.10, 0.17), 0.07, PAL.shadow, 2,3, 0);
-
-  const tris = body.pos.length/9 + pupils.pos.length/9;
-  return { body: uploadMesh(body), pupils: uploadMesh(pupils), tris };
+  addSphere(body,M4.mul(M4.translate(0.02,headY,0),M4.rotZ(0.08)),0.4,skin,4,5,0.1);
+  addSphere(body,M4.translate(0.30,headY+0.08,-0.17),0.15,PAL.white,2,4,0.04);
+  addSphere(body,M4.translate(0.31,headY+0.10,0.17),0.15,PAL.white,2,4,0.04);
+  addCone(body,M4.mul(M4.translate(0.40,headY-0.04,0),M4.rotZ(-Math.PI/2)),0.1,0.25,PAL.orange,4);
+  addBox(body,M4.translate(0.37,headY-0.22,0),0.06,0.07,0.28,shade(PAL.shadow,1.3));
+  if(feature===0){ addCone(body,M4.translate(0,headY+0.34,0),0.3,0.6,PAL.purple,6); }
+  else if(feature===1){ addCone(body,M4.mul(M4.translate(0.08,headY+0.3,-0.2),M4.rotZ(0.25)),0.1,0.36,PAL.white,5);
+    addCone(body,M4.mul(M4.translate(0.08,headY+0.3,0.2),M4.rotZ(0.25)),0.1,0.36,PAL.white,5); }
+  else if(feature===2){ addSphere(body,M4.mul(M4.translate(-0.33,0.78,0),M4.scale(0.8,0.95,1.0)),0.46,shade(PAL.grass,0.9),4,5,0.12); }
+  else { addBox(body,M4.translate(0,headY+0.46,0),0.05,0.42,0.05,dark);
+    addSphere(body,M4.translate(0,headY+0.72,0),0.12,PAL.yellow,3,4,0.1); }
+  const pupils=Mesh();
+  addSphere(pupils,M4.translate(0.42,headY+0.08,-0.17),0.07,PAL.shadow,2,3,0);
+  addSphere(pupils,M4.translate(0.43,headY+0.10,0.17),0.07,PAL.shadow,2,3,0);
+  return {body:uploadMesh(body),pupils:uploadMesh(pupils)};
 }
 
-const sceneGeo = buildScene();
-const racerGeo = buildRacer(PAL.red);
-document.getElementById("hud").textContent = "Racer tris: "+racerGeo.tris;
+// die with correct pips
+function buildDie(){ const m=Mesh(), S=0.8;
+  addBox(m,M4.ident(),S,S,S,PAL.white);
+  const faces=[{n:[0,1,0],u:[1,0,0],v:[0,0,1],val:1},{n:[0,-1,0],u:[1,0,0],v:[0,0,1],val:6},
+    {n:[1,0,0],u:[0,0,1],v:[0,1,0],val:3},{n:[-1,0,0],u:[0,0,1],v:[0,1,0],val:4},
+    {n:[0,0,1],u:[1,0,0],v:[0,1,0],val:2},{n:[0,0,-1],u:[1,0,0],v:[0,1,0],val:5}];
+  const grid={1:[[0,0]],2:[[-1,1],[1,-1]],3:[[-1,1],[0,0],[1,-1]],
+    4:[[-1,1],[1,1],[-1,-1],[1,-1]],5:[[-1,1],[1,1],[0,0],[-1,-1],[1,-1]],
+    6:[[-1,1],[1,1],[-1,0],[1,0],[-1,-1],[1,-1]]};
+  const off=S/2+0.02,g=S*0.27,pr=0.085;
+  for(const f of faces)for(const[px,py]of grid[f.val]){
+    const pos=[f.n[0]*off+f.u[0]*px*g+f.v[0]*py*g,f.n[1]*off+f.u[1]*px*g+f.v[1]*py*g,f.n[2]*off+f.u[2]*px*g+f.v[2]*py*g];
+    addSphere(m,M4.translate(pos[0],pos[1],pos[2]),pr,PAL.shadow,2,4,0); }
+  return uploadMesh(m);
+}
+const DIE_SETTLE={1:[0,0,0],6:[Math.PI,0,0],2:[-Math.PI/2,0,0],5:[Math.PI/2,0,0],3:[0,0,-Math.PI/2],4:[0,0,Math.PI/2]};
+
+// 7-seg digit meshes 0-9 (local XY plane, centered)
+function buildDigits(){ const w=0.9,h=1.4,th=0.2,hh=h/2,qv=h/4,qy=hh/2;
+  const S={a:[0,hh,w-th,th],g:[0,0,w-th,th],d:[0,-hh,w-th,th],
+    f:[-(w/2-th/2),qy,th,hh],b:[(w/2-th/2),qy,th,hh],
+    e:[-(w/2-th/2),-qy,th,hh],c:[(w/2-th/2),-qy,th,hh]};
+  const map={0:"abcdef",1:"bc",2:"abged",3:"abgcd",4:"fgbc",5:"afgcd",6:"afgecd",7:"abc",8:"abcdefg",9:"abcdfg"};
+  const out={};
+  for(let d=0;d<=9;d++){ const m=Mesh();
+    for(const ch of map[d]){ const s=S[ch]; addBox(m,M4.translate(s[0],s[1],0),s[2],s[3],th,PAL.yellow); }
+    out[d]=uploadMesh(m); } return out;
+}
 
 //============================================================================
-// low-res render target
+// build geometry
+//============================================================================
+buildTrack();
+let sceneGeo=buildScene();
+const dieGeo=buildDie();
+const digitGeo=buildDigits();
+const TEAMS=[
+  {name:"ROSA",color:PAL.red,feature:0},
+  {name:"AZURE",color:PAL.blue,feature:1},
+  {name:"GOLDIE",color:PAL.yellow,feature:2},
+  {name:"GRAPE",color:PAL.purple,feature:3},
+];
+const racerGeoCache=TEAMS.map(t=>buildRacer(t.color,t.feature));
+
+//============================================================================
+// render target + settings
 //============================================================================
 let target=null;
 function makeTarget(w,h){
   if(target){ gl.deleteTexture(target.tex); gl.deleteFramebuffer(target.fb); gl.deleteRenderbuffer(target.rb); }
-  const tex=gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D,tex);
+  const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  const fb=gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  const fb=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
-  const rb=gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER,rb);
+  const rb=gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER,rb);
   gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,rb);
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-  target={tex,fb,rb,w,h};
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null); target={tex,fb,rb,w,h};
 }
-
-//============================================================================
-// settings state + canvas sizing
-//============================================================================
-const settings = { internalW:320, dither:0.6, pattern:1, levels:6 };
-let lowW=320, lowH=180;
-
-function resize(){
-  const dpr = Math.min(window.devicePixelRatio||1, 2);
-  const cw = Math.floor(innerWidth*dpr), ch = Math.floor(innerHeight*dpr);
-  if(canvas.width!==cw || canvas.height!==ch){ canvas.width=cw; canvas.height=ch; }
-  lowW = settings.internalW;
-  lowH = Math.max(1, Math.round(settings.internalW * (ch/cw)));
-  if(!target || target.w!==lowW || target.h!==lowH) makeTarget(lowW,lowH);
+const settings={internalW:320,dither:0.6,pattern:1,levels:6,speed:1.0};
+let lowW=320,lowH=180;
+function resize(){ const dpr=Math.min(window.devicePixelRatio||1,2);
+  const cw=Math.floor(innerWidth*dpr),ch=Math.floor(innerHeight*dpr);
+  if(canvas.width!==cw||canvas.height!==ch){ canvas.width=cw; canvas.height=ch; }
+  lowW=settings.internalW; lowH=Math.max(1,Math.round(settings.internalW*(ch/cw)));
+  if(!target||target.w!==lowW||target.h!==lowH) makeTarget(lowW,lowH);
+  document.getElementById("rot").style.display=(innerWidth<innerHeight&&innerWidth<520)?"flex":"none";
 }
 window.addEventListener("resize",resize);
 
 //============================================================================
-// render loop
+// animation driver (tweens) + timing
 //============================================================================
-const keyLightWorld  = norm3([0.5,1.0,0.35]);
-const fillLightWorld = norm3([-0.6,0.4,-0.5]);
-function norm3(v){ const l=Math.hypot(v[0],v[1],v[2]); return [v[0]/l,v[1]/l,v[2]/l]; }
-function viewDir(view, w){ // transform a world direction into view space (rotation only)
-  return norm3([ view[0]*w[0]+view[4]*w[1]+view[8]*w[2],
-                 view[1]*w[0]+view[5]*w[1]+view[9]*w[2],
-                 view[2]*w[0]+view[6]*w[1]+view[10]*w[2] ]);
+let tweens=[], clock=0, fastForward=false;
+function animSpeed(){ return settings.speed*(fastForward?2.8:1); }
+function tween(sec,fn){ return new Promise(res=>tweens.push({t:0,dur:Math.max(sec,1e-4),fn,res})); }
+function wait(sec){ return tween(sec,()=>{}); }
+function stepTweens(dt){ const a=dt*animSpeed();
+  for(let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=a; let p=tw.t/tw.dur;
+    if(p>=1)p=1; tw.fn(p); if(p>=1){ tweens.splice(i,1); tw.res(); } } }
+
+//============================================================================
+// camera
+//============================================================================
+let camEye=[0,10,16], camLook=[6,1.4,0], camMode="wide";
+function cameraUpdate(dt){
+  let de,dl;
+  if(camMode==="wide"){
+    const mid=track.spaces[Math.floor(track.N*0.35)].pos;
+    de=[mid[0]-4,13,mid[2]+20]; dl=[mid[0]+6,1.2,mid[2]];
+  } else {
+    const r=GAME.active; const p=r?r.pos:[6,0,0]; const t=trackTangent(r?r.space:0);
+    de=[p[0]-t[0]*5.5-2.5, p[1]+6.0, p[2]-t[1]*5.5+6.5];
+    dl=[p[0]+t[0]*2.0, p[1]+1.0, p[2]+t[1]*2.0];
+  }
+  const k=1-Math.exp(-3.0*dt);
+  for(let i=0;i<3;i++){ camEye[i]=lerp(camEye[i],de[i],k); camLook[i]=lerp(camLook[i],dl[i],k); }
 }
 
+//============================================================================
+// game state
+//============================================================================
+const GAME={racers:[],order:[],active:null,finishers:[],phase:"init",round:0};
+let die={show:false,pos:[0,3,0],rot:[0,0,0],spinning:false};
+let rollNum={show:false,value:0,remaining:0,pos:[0,0,0],pop:0};
+let puffs=[]; // {pos,age,life}
+
+function makeRacers(n,allCpu){
+  GAME.racers=[]; GAME.finishers=[];
+  for(let i=0;i<n;i++){ const lane=i-(n-1)/2;
+    GAME.racers.push({ idx:i, name:TEAMS[i].name, color:TEAMS[i].color, geo:racerGeoCache[i],
+      space:0, lane, pos:spaceWorld(0,lane), face:0, sq:1, moving:false, finished:false,
+      place:0, phase:Math.random()*TAU, cpu: allCpu || i!==0, tripped:false }); }
+  GAME.order=GAME.racers.slice();
+}
+
+//============================================================================
+// input: bonk the dice
+//============================================================================
+let bonkResolver=null;
+function waitForBonk(){ return new Promise(res=>{ bonkResolver=res; }); }
+function doBonk(){ if(bonkResolver){ const f=bonkResolver; bonkResolver=null; f(); } }
+
+//============================================================================
+// turn flow
+//============================================================================
+const el=s=>document.querySelector(s);
+function setStatus(txt,color){ const s=el("#status"); s.textContent=txt;
+  s.style.borderColor=color||"#FFD23F"; }
+function rgbStr(c){ return `rgb(${c.map(v=>Math.round(v*255)).join(",")})`; }
+
+async function startRace(allCpu){
+  el("#over").classList.remove("show");
+  makeRacers(4,allCpu);
+  camMode="wide"; camEye=[-4,14,22]; camLook=[8,1,0];
+  GAME.phase="intro"; GAME.round=0;
+  setStatus("ON YOUR MARKS...");
+  await wait(1.4);
+  setStatus("GO!"); await wait(0.5);
+  camMode="follow";
+  await raceLoop();
+}
+
+async function raceLoop(){
+  GAME.phase="race";
+  let guard=0;
+  while(GAME.finishers.length<2 && guard<400){
+    guard++;
+    for(const r of GAME.order){
+      if(r.finished) continue;
+      GAME.active=r;
+      await takeTurn(r);
+      if(GAME.finishers.length>=2) break;
+    }
+    GAME.round++;
+  }
+  await endRace();
+}
+
+async function takeTurn(r){
+  setStatus(r.name+(r.cpu?" (CPU)":"")+" — turn", r.color? rgbStr(r.color):null);
+  await wait(0.25);
+  if(r.tripped){ // skip main move, stand up
+    r.tripped=false;
+    bannerPuff(r.pos); setStatus(r.name+" gets up!"); await wait(0.7); return;
+  }
+  const roll=await rollDice(r);
+  await moveRacer(r,roll);
+  await wait(0.15);
+}
+
+async function rollDice(r){
+  die.show=true; die.spinning=true;
+  die.pos=[r.pos[0],r.pos[1]+2.4,r.pos[2]];
+  GAME.phase="awaitRoll";
+  if(r.cpu){ await wait(0.4); }
+  else { el("#roll").classList.add("show"); await waitForBonk(); el("#roll").classList.remove("show"); }
+  GAME.phase="rolling";
+  const v = (debug.forceRoll!=null)? debug.forceRoll : 1+Math.floor(Math.random()*6);
+  debug.forceRoll=null;
+  // racer bonk hop
+  const gy=r.pos[1];
+  tween(0.28,t=>{ r.pos[1]=gy+Math.sin(t*Math.PI)*0.6; });
+  // spin fast
+  await tween(0.55,t=>{ die.rot=[t*22,t*28,t*17]; die.pos=[r.pos[0],gy+2.4+Math.sin(t*Math.PI)*0.3,r.pos[2]]; });
+  r.pos[1]=gy;
+  // settle to show value
+  const start=die.rot.slice(), tgt=DIE_SETTLE[v];
+  await tween(0.22,t=>{ die.rot=[lerp(start[0],tgt[0],t),lerp(start[1],tgt[1],t),lerp(start[2],tgt[2],t)]; });
+  die.rot=tgt.slice(); die.spinning=false;
+  // number bursts out
+  rollNum={show:true,value:v,remaining:v,pos:[die.pos[0],die.pos[1]+0.3,die.pos[2]],pop:0};
+  await tween(0.3,t=>{ rollNum.pop=Math.sin(t*Math.PI); });
+  rollNum.pop=0;
+  await wait(0.15);
+  die.show=false;
+  return v;
+}
+
+async function moveRacer(r,steps){
+  for(let s=0;s<steps;s++){
+    if(r.space>=track.finishIndex) break;
+    const from=r.space, to=r.space+1;
+    // passing: racers sitting on `to` that we move THROUGH (not our final stop)
+    const isLast=(s===steps-1)||(to>=track.finishIndex);
+    await hop(r,from,to);
+    r.space=to;
+    rollNum.remaining=steps-1-s;
+    if(!isLast){ for(const o of GAME.racers) if(o!==r&&!o.finished&&o.space===to) whoosh(o.pos); }
+    if(r.space>=track.finishIndex){ await finishRacer(r); return; }
+  }
+  rollNum.show=false;
+  // land / sharedSpace point (hooks go here in M3)
+}
+
+async function hop(r,a,b){
+  const pa=spaceWorld(a,r.lane), pb=spaceWorld(b,r.lane);
+  r.face=Math.atan2(-(pb[2]-pa[2]),(pb[0]-pa[0]));
+  r.moving=true;
+  await tween(0.26,t=>{
+    r.pos[0]=lerp(pa[0],pb[0],t); r.pos[2]=lerp(pa[2],pb[2],t);
+    r.pos[1]=lerp(pa[1],pb[1],t)+Math.sin(t*Math.PI)*0.55;
+    r.sq=1+Math.sin(t*Math.PI)*0.14;
+    if(t>0.8) r.sq=1-(t-0.8)/0.2*0.18;
+  });
+  r.pos=pb.slice(); r.sq=1; r.moving=false;
+  puff(pb);
+}
+
+async function finishRacer(r){
+  r.finished=true; r.moving=false;
+  r.place=GAME.finishers.length+1; GAME.finishers.push(r);
+  r.pos=spaceWorld(track.finishIndex,r.lane); r.sq=1;
+  setStatus(r.name+" FINISHES #"+r.place+"!", r.color?rgbStr(r.color):null);
+  rollNum.show=false; die.show=false;
+  // little celebration hop
+  const gy=r.pos[1];
+  for(let k=0;k<2;k++){ await tween(0.22,t=>{ r.pos[1]=gy+Math.sin(t*Math.PI)*0.5; }); r.pos[1]=gy; }
+  bannerPuff(r.pos);
+  await wait(0.4);
+}
+
+async function endRace(){
+  GAME.phase="over"; die.show=false; rollNum.show=false;
+  el("#roll").classList.remove("show");
+  const names=["1st","2nd","3rd","4th"];
+  let html="";
+  GAME.finishers.forEach((r,i)=>{ html+=`<div style="color:${rgbStr(r.color)}">${names[i]} &nbsp; ${r.name}</div>`; });
+  const dnf=GAME.racers.filter(r=>!r.finished);
+  dnf.forEach(r=>{ html+=`<div style="color:${rgbStr(shade(r.color,0.7))};opacity:.7">— &nbsp; ${r.name}</div>`; });
+  el("#overPlaces").innerHTML=html;
+  el("#overTitle").textContent="RACE OVER";
+  // orbit the winner briefly
+  if(GAME.finishers[0]) GAME.active=GAME.finishers[0];
+  el("#over").classList.add("show");
+  setStatus(GAME.finishers[0].name+" wins the race!", GAME.finishers[0].color?rgbStr(GAME.finishers[0].color):null);
+}
+
+//============================================================================
+// fx helpers (dust puffs / whoosh / banner pop) - all tiny 3D billboards
+//============================================================================
+function puff(pos){ puffs.push({pos:[pos[0],0.25,pos[2]],age:0,life:0.45,kind:0}); }
+function whoosh(pos){ puffs.push({pos:[pos[0],0.9,pos[2]],age:0,life:0.4,kind:1}); }
+function bannerPuff(pos){ for(let i=0;i<6;i++) puffs.push({pos:[pos[0],1.6,pos[2]],age:0,life:0.6,kind:2,a:Math.random()*TAU}); }
+
+//============================================================================
+// billboard matrix (faces camera)
+//============================================================================
+function billboard(view,pos,s){ const m=new Float32Array(16);
+  m[0]=view[0]*s; m[1]=view[4]*s; m[2]=view[8]*s;  m[3]=0;
+  m[4]=view[1]*s; m[5]=view[5]*s; m[6]=view[9]*s;  m[7]=0;
+  m[8]=view[2];   m[9]=view[6];   m[10]=view[10];  m[11]=0;
+  m[12]=pos[0];   m[13]=pos[1];   m[14]=pos[2];    m[15]=1; return m; }
+
+//============================================================================
+// render
+//============================================================================
+const keyW=norm3([0.5,1.0,0.35]), fillW=norm3([-0.6,0.4,-0.5]);
+function norm3(v){ const l=Math.hypot(v[0],v[1],v[2]); return [v[0]/l,v[1]/l,v[2]/l]; }
+function vdir(view,w){ return norm3([view[0]*w[0]+view[4]*w[1]+view[8]*w[2],
+  view[1]*w[0]+view[5]*w[1]+view[9]*w[2], view[2]*w[0]+view[6]*w[1]+view[10]*w[2]]); }
+
+function drawMesh(geo,model,tint){ gl.uniformMatrix4fv(sU.model,false,model);
+  gl.uniform1f(sU.tint,tint||0); gl.bindVertexArray(geo.vao); gl.drawArrays(gl.TRIANGLES,0,geo.count); }
+
+let last=0;
 function frame(ms){
-  const t = ms/1000;
+  const dt=Math.min((ms-last)/1000||0,0.05); last=ms; clock+=dt;
+  stepTweens(dt); cameraUpdate(dt);
+  // update puffs
+  for(let i=puffs.length-1;i>=0;i--){ puffs[i].age+=dt*animSpeed(); if(puffs[i].age>=puffs[i].life) puffs.splice(i,1); }
   resize();
 
-  // camera: slow orbit around the middle of the track
-  const cx = TILES[5][0], cz = 0;
-  const ang = t*0.25;
-  const eye = [cx + Math.cos(ang)*15, 8.5 + Math.sin(t*0.5)*0.5, cz + Math.sin(ang)*15];
-  const view = M4.lookAt(eye,[cx,1.4,cz],[0,1,0]);
-  const proj = M4.perspective(Math.PI/4.2, lowW/lowH, 0.1, 200);
+  const view=M4.lookAt(camEye,camLook,[0,1,0]);
+  const proj=M4.perspective(Math.PI/4.3,lowW/lowH,0.1,220);
 
-  // ---- scene pass into low-res FBO ----
-  gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb);
-  gl.viewport(0,0,lowW,lowH);
-  gl.enable(gl.DEPTH_TEST);
-  gl.clearColor(PAL.sky[0],PAL.sky[1],PAL.sky[2],1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb); gl.viewport(0,0,lowW,lowH);
+  gl.enable(gl.DEPTH_TEST); gl.clearColor(PAL.sky[0],PAL.sky[1],PAL.sky[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-
   gl.useProgram(sceneProg);
-  gl.uniformMatrix4fv(sceneU.proj,false,proj);
-  gl.uniformMatrix4fv(sceneU.view,false,view);
-  gl.uniform3fv(sceneU.light,  viewDir(view,keyLightWorld));
-  gl.uniform3fv(sceneU.light2, viewDir(view,fillLightWorld));
+  gl.uniformMatrix4fv(sU.proj,false,proj); gl.uniformMatrix4fv(sU.view,false,view);
+  gl.uniform3fv(sU.light,vdir(view,keyW)); gl.uniform3fv(sU.light2,vdir(view,fillW));
 
-  // static scene
-  gl.uniformMatrix4fv(sceneU.model,false,M4.ident());
-  gl.bindVertexArray(sceneGeo.vao);
-  gl.drawArrays(gl.TRIANGLES,0,sceneGeo.count);
+  drawMesh(sceneGeo,M4.ident(),0);
 
-  // racer on tile 3, with idle bob + squash/stretch
-  const stand = TILES[3];
-  const bob = Math.sin(t*2.4)*0.09;
-  const sq  = 1 + Math.sin(t*2.4)*0.05;        // vertical squash/stretch
-  const sxz = 1 - (sq-1)*0.6;
-  const racerM = M4.mul(M4.mul(
-      M4.translate(stand[0], 0.2+bob, stand[1]),
-      M4.scale(sxz,sq,sxz)), M4.rotY(Math.sin(t*0.8)*0.15));
-  gl.uniformMatrix4fv(sceneU.model,false,racerM);
-  gl.bindVertexArray(racerGeo.body.vao);
-  gl.drawArrays(gl.TRIANGLES,0,racerGeo.body.count);
+  // racers
+  for(const r of GAME.racers){
+    const idleBob=(!r.moving&&!r.finished)?Math.sin(clock*2.4+r.phase)*0.06:0;
+    const sxz=1-(r.sq-1)*0.6;
+    let model=M4.mul(M4.mul(M4.mul(
+      M4.translate(r.pos[0],r.pos[1]+idleBob,r.pos[2]),
+      M4.rotY(r.face)), M4.scale(sxz,r.sq,sxz)),
+      M4.rotY(0));
+    const active=(r===GAME.active&&GAME.phase!=="over");
+    drawMesh(r.geo.body,model,0);
+    // pupils jiggle
+    const jx=Math.sin(clock*5+r.phase)*0.02, jy=Math.cos(clock*6.3+r.phase)*0.03;
+    drawMesh(r.geo.pupils,M4.mul(model,M4.translate(jx,jy,0)),0);
+  }
 
-  // pupils jiggle (googly eyes)
-  const jig = M4.translate(Math.sin(t*5)*0.02, Math.cos(t*6.3)*0.03, 0);
-  gl.uniformMatrix4fv(sceneU.model,false,M4.mul(racerM,jig));
-  gl.bindVertexArray(racerGeo.pupils.vao);
-  gl.drawArrays(gl.TRIANGLES,0,racerGeo.pupils.count);
+  // die
+  if(die.show){ const m=M4.mul(M4.mul(M4.mul(M4.translate(die.pos[0],die.pos[1]+Math.sin(clock*2)*0.08,die.pos[2]),
+      M4.rotZ(die.rot[2])),M4.rotY(die.rot[1])),M4.rotX(die.rot[0]));
+    drawMesh(dieGeo,m,0); }
 
-  // ---- post pass to screen ----
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-  gl.viewport(0,0,canvas.width,canvas.height);
-  gl.disable(gl.DEPTH_TEST);
-  gl.useProgram(postProg);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D,target.tex);
-  gl.uniform1i(postU.tex,0);
-  gl.uniform2f(postU.lowRes,lowW,lowH);
-  gl.uniform1f(postU.dither,settings.dither);
-  gl.uniform1f(postU.pattern,settings.pattern);
-  gl.uniform1f(postU.levels,settings.levels);
-  gl.bindVertexArray(null);
-  gl.drawArrays(gl.TRIANGLES,0,3);
+  // roll number billboard
+  if(rollNum.show){ const d=digitGeo[clamp(rollNum.remaining,0,9)];
+    const s=0.8*(1+rollNum.pop*0.6);
+    const pos=[die.show?die.pos[0]:(GAME.active?GAME.active.pos[0]:0),
+               (GAME.active?GAME.active.pos[1]:0)+3.1, die.show?die.pos[2]:(GAME.active?GAME.active.pos[2]:0)];
+    drawMesh(d,billboard(view,pos,s),0); }
 
+  // puffs (billboarded spheres)
+  for(const p of puffs){ const t=p.age/p.life; let s,col,y=p.pos[1];
+    if(p.kind===2){ s=0.12*(1-t); y=p.pos[1]+t*0.8; col=0; }
+    else if(p.kind===1){ s=0.3*(1-t); col=0; }
+    else { s=0.18*(1+t); col=0; }
+    drawMesh(dieGeo, M4.mul(billboard(view,[p.pos[0],y,p.pos[2]],s),M4.scale(1,1,0.1)), 0.7*(1-t)); }
+
+  // post
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,canvas.width,canvas.height);
+  gl.disable(gl.DEPTH_TEST); gl.useProgram(postProg);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,target.tex);
+  gl.uniform1i(pU.tex,0); gl.uniform2f(pU.lowRes,lowW,lowH);
+  gl.uniform1f(pU.dither,settings.dither); gl.uniform1f(pU.pattern,settings.pattern);
+  gl.uniform1f(pU.levels,settings.levels);
+  gl.bindVertexArray(null); gl.drawArrays(gl.TRIANGLES,0,3);
   requestAnimationFrame(frame);
 }
 
 //============================================================================
+// debug (full debug mode arrives in M5)
+//============================================================================
+const debug={forceRoll:null};
+
+//============================================================================
 // UI wiring
 //============================================================================
-const $=s=>document.querySelector(s);
-$("#resRow").addEventListener("click",e=>{
-  const b=e.target.closest("button"); if(!b) return;
-  settings.internalW=+b.dataset.res;
-  [...$("#resRow").children].forEach(x=>x.classList.toggle("on",x===b));
-});
-$("#patRow").addEventListener("click",e=>{
-  const b=e.target.closest("button"); if(!b) return;
-  settings.pattern=+b.dataset.pat;
-  [...$("#patRow").children].forEach(x=>x.classList.toggle("on",x===b));
-});
-$("#dither").addEventListener("input",e=>{
-  settings.dither=+e.target.value/100; $("#ditherVal").textContent=e.target.value+"%";
-});
-$("#levels").addEventListener("input",e=>{
-  settings.levels=+e.target.value; $("#levVal").textContent=e.target.value;
-});
+el("#gear").addEventListener("click",()=>el("#panel").classList.toggle("open"));
+el("#resRow").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return;
+  settings.internalW=+b.dataset.res; [...el("#resRow").children].forEach(x=>x.classList.toggle("on",x===b)); });
+el("#patRow").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return;
+  settings.pattern=+b.dataset.pat; [...el("#patRow").children].forEach(x=>x.classList.toggle("on",x===b)); });
+el("#dither").addEventListener("input",e=>{ settings.dither=+e.target.value/100; el("#ditherVal").textContent=e.target.value+"%"; });
+el("#levels").addEventListener("input",e=>{ settings.levels=+e.target.value; el("#levVal").textContent=e.target.value; });
+el("#speed").addEventListener("input",e=>{ settings.speed=+e.target.value/100; el("#spdVal").textContent=settings.speed.toFixed(1)+"x"; });
+el("#ff").addEventListener("click",()=>{ fastForward=!fastForward; el("#ff").classList.toggle("on",fastForward); });
+el("#roll").addEventListener("click",e=>{ e.preventDefault(); doBonk(); });
+el("#again").addEventListener("click",()=>startRace(false));
 
+// global input: tap canvas / space / enter bonks when awaiting a roll
+canvas.addEventListener("pointerdown",e=>{ if(GAME.phase==="awaitRoll" && GAME.active && !GAME.active.cpu) doBonk(); });
+window.addEventListener("keydown",e=>{
+  if(e.code==="Space"||e.code==="Enter"){ e.preventDefault();
+    if(GAME.phase==="awaitRoll"&&GAME.active&&!GAME.active.cpu) doBonk(); }
+  if(e.key==="`"){ fastForward=!fastForward; el("#ff").classList.toggle("on",fastForward); }
+});
+// stop mobile gestures from scrolling / zooming
+document.addEventListener("gesturestart",e=>e.preventDefault());
+document.addEventListener("dblclick",e=>e.preventDefault());
+
+// expose for testing/debug
+window.GAME=GAME; window.SPELL={startRace,settings,set ff(v){fastForward=v;}};
+
+//============================================================================
+// boot
+//============================================================================
 resize();
 requestAnimationFrame(frame);
+const params=new URLSearchParams(location.search);
+const AUTO=params.get("auto")==="1";
+if(AUTO){ fastForward=true; el("#ff").classList.add("on"); }
+startRace(AUTO);
 </script>
 </body>
 </html>
