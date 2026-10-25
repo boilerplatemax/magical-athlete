@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Spellsprint</title>
+<style>
+  html,body{margin:0;height:100%;background:#2B1E3F;overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;color:#FFF8F0;}
+  #gl{display:block;width:100vw;height:100vh;image-rendering:pixelated;image-rendering:crisp-edges;}
+  #panel{position:fixed;top:10px;right:10px;background:rgba(43,30,63,.82);
+    border:2px solid #A45CFF;border-radius:10px;padding:10px 12px;width:210px;
+    font-size:12px;line-height:1.5;user-select:none;backdrop-filter:blur(2px);}
+  #panel h1{font-size:14px;margin:0 0 6px;color:#FFD23F;letter-spacing:1px;}
+  #panel label{display:block;margin-top:8px;color:#FFE8B0;}
+  #panel .row{display:flex;gap:4px;margin-top:3px;}
+  #panel button{flex:1;background:#3D7BFF;color:#FFF8F0;border:0;border-radius:6px;
+    padding:5px 0;font:inherit;font-size:11px;cursor:pointer;}
+  #panel button.on{background:#FF4D5E;}
+  #panel input[type=range]{width:100%;accent-color:#FFD23F;margin:2px 0 0;}
+  #panel .val{float:right;color:#5BD15B;}
+  #hud{position:fixed;left:10px;bottom:8px;font-size:11px;color:#FFE8B0;
+    text-shadow:1px 1px 0 #2B1E3F;}
+  #tag{position:fixed;left:12px;top:10px;font-size:18px;color:#FFD23F;
+    letter-spacing:2px;text-shadow:2px 2px 0 #A45CFF;}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="tag">SPELLSPRINT</div>
+<div id="panel">
+  <h1>SETTINGS (M1)</h1>
+  <label>Internal resolution</label>
+  <div class="row" id="resRow">
+    <button data-res="240">240</button>
+    <button data-res="320" class="on">320</button>
+    <button data-res="480">480</button>
+  </div>
+  <label>Dither strength <span class="val" id="ditherVal">60%</span></label>
+  <input id="dither" type="range" min="0" max="100" value="60">
+  <label>Pattern scale</label>
+  <div class="row" id="patRow">
+    <button data-pat="1" class="on">1x</button>
+    <button data-pat="2">2x</button>
+  </div>
+  <label>Color levels <span class="val" id="levVal">6</span></label>
+  <input id="levels" type="range" min="2" max="16" value="6">
+</div>
+<div id="hud"></div>
+
+<script>
+"use strict";
+//============================================================================
+// SPELLSPRINT  -  Milestone 1: renderer, low-res FBO, dither/palette,
+// flat shading, one racer on a test track.
+//============================================================================
+
+const TAU = Math.PI * 2;
+
+// ---- toy-box palette (also used as source colors for quantization) --------
+const PAL = {
+  sky:   [0x6E/255,0xC6/255,0xFF/255],
+  grass: [0x5B/255,0xD1/255,0x5B/255],
+  track: [0xFF/255,0xE8/255,0xB0/255],
+  red:   [0xFF/255,0x4D/255,0x5E/255],
+  blue:  [0x3D/255,0x7B/255,0xFF/255],
+  yellow:[0xFF/255,0xD2/255,0x3F/255],
+  purple:[0xA4/255,0x5C/255,0xFF/255],
+  orange:[0xFF/255,0x9A/255,0x3C/255],
+  shadow:[0x2B/255,0x1E/255,0x3F/255],
+  white: [0xFF/255,0xF8/255,0xF0/255],
+};
+function shade(c, f){ return [c[0]*f, c[1]*f, c[2]*f]; } // darken/lighten a palette color
+
+//============================================================================
+// mat4 math (column-major, WebGL layout)
+//============================================================================
+const M4 = {
+  ident(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+  mul(a,b){ // a*b
+    const o = new Float32Array(16);
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      o[c*4+r] = a[0*4+r]*b[c*4+0] + a[1*4+r]*b[c*4+1] + a[2*4+r]*b[c*4+2] + a[3*4+r]*b[c*4+3];
+    }
+    return o;
+  },
+  translate(x,y,z){ const m=M4.ident(); m[12]=x;m[13]=y;m[14]=z; return m; },
+  scale(x,y,z){ const m=M4.ident(); m[0]=x;m[5]=y;m[10]=z; return m; },
+  rotY(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[0]=c;m[2]=-s;m[8]=s;m[10]=c; return m; },
+  rotX(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[5]=c;m[6]=s;m[9]=-s;m[10]=c; return m; },
+  rotZ(a){ const c=Math.cos(a),s=Math.sin(a); const m=M4.ident(); m[0]=c;m[1]=s;m[4]=-s;m[5]=c; return m; },
+  perspective(fovy, aspect, near, far){
+    const f = 1/Math.tan(fovy/2), nf = 1/(near-far);
+    const m = new Float32Array(16);
+    m[0]=f/aspect; m[5]=f; m[10]=(far+near)*nf; m[11]=-1; m[14]=2*far*near*nf;
+    return m;
+  },
+  lookAt(eye, tgt, up){
+    const zx=eye[0]-tgt[0], zy=eye[1]-tgt[1], zz=eye[2]-tgt[2];
+    let zl=Math.hypot(zx,zy,zz)||1; const z=[zx/zl,zy/zl,zz/zl];
+    let xx=up[1]*z[2]-up[2]*z[1], xy=up[2]*z[0]-up[0]*z[2], xz=up[0]*z[1]-up[1]*z[0];
+    let xl=Math.hypot(xx,xy,xz)||1; const x=[xx/xl,xy/xl,xz/xl];
+    const y=[z[1]*x[2]-z[2]*x[1], z[2]*x[0]-z[0]*x[2], z[0]*x[1]-z[1]*x[0]];
+    return new Float32Array([
+      x[0],y[0],z[0],0,
+      x[1],y[1],z[1],0,
+      x[2],y[2],z[2],0,
+      -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+      -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+      -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1 ]);
+  },
+  // transform a point (w=1), ignoring projection
+  xform(m,p){
+    return [ m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12],
+             m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13],
+             m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14] ];
+  }
+};
+
+//============================================================================
+// mesh builder: everything bakes into flat position/color arrays.
+// Non-indexed triangles. Flat shading means we never store normals.
+//============================================================================
+function Mesh(){ return { pos:[], col:[] }; }
+function hash2(i,j){ const h=Math.sin(i*12.9898+j*78.233)*43758.5453; return h-Math.floor(h); }
+
+function tri(mesh, mat, a,b,c, color){
+  const A=M4.xform(mat,a), B=M4.xform(mat,b), C=M4.xform(mat,c);
+  mesh.pos.push(A[0],A[1],A[2], B[0],B[1],B[2], C[0],C[1],C[2]);
+  for(let k=0;k<3;k++) mesh.col.push(color[0],color[1],color[2]);
+}
+
+function addBox(mesh, mat, sx,sy,sz, color){
+  const x=sx/2,y=sy/2,z=sz/2;
+  const c=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]];
+  const f=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+  for(const q of f){ tri(mesh,mat,c[q[0]],c[q[1]],c[q[2]],color); tri(mesh,mat,c[q[0]],c[q[2]],c[q[3]],color); }
+}
+
+function addSphere(mesh, mat, r, color, latN, longN, jitter){
+  jitter = jitter||0;
+  const pts=[];
+  for(let i=0;i<=latN;i++){
+    const theta=i/latN*Math.PI, st=Math.sin(theta), ct=Math.cos(theta);
+    const row=[];
+    for(let j=0;j<=longN;j++){
+      const phi=j/longN*TAU;
+      const rr = r*(1 + (jitter? (hash2(i,j)*2-1)*jitter : 0));
+      row.push([st*Math.cos(phi)*rr, ct*rr, st*Math.sin(phi)*rr]);
+    }
+    pts.push(row);
+  }
+  for(let i=0;i<latN;i++) for(let j=0;j<longN;j++){
+    const a=pts[i][j], b=pts[i+1][j], c=pts[i+1][j+1], d=pts[i][j+1];
+    tri(mesh,mat,a,b,c,color); tri(mesh,mat,a,c,d,color);
+  }
+}
+
+function addCone(mesh, mat, r, h, color, seg){
+  const apex=[0,h,0];
+  for(let i=0;i<seg;i++){
+    const a0=i/seg*TAU, a1=(i+1)/seg*TAU;
+    const p0=[Math.cos(a0)*r,0,Math.sin(a0)*r], p1=[Math.cos(a1)*r,0,Math.sin(a1)*r];
+    tri(mesh,mat,p0,p1,apex,color);
+    tri(mesh,mat,p0,[0,0,0],p1,color);
+  }
+}
+
+//============================================================================
+// WebGL setup
+//============================================================================
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl2", {antialias:false, alpha:false});
+if(!gl){ document.body.innerHTML="<p style='padding:20px'>WebGL2 is required.</p>"; throw new Error("no webgl2"); }
+
+function compile(type, src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+"\n"+src);
+  return s;
+}
+function program(vs, fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+// ---- scene program: flat shading, normals from screen-space derivatives ----
+const sceneProg = program(`#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aColor;
+uniform mat4 uProj, uView, uModel;
+out vec3 vColor; out vec3 vView;
+void main(){
+  vec4 v = uView * uModel * vec4(aPos,1.0);
+  vView = v.xyz; vColor = aColor;
+  gl_Position = uProj * v;
+}`,`#version 300 es
+precision highp float;
+in vec3 vColor; in vec3 vView;
+out vec4 o;
+uniform vec3 uLight;   // view-space direction toward the key light
+uniform vec3 uLight2;  // view-space fill light
+void main(){
+  vec3 N = normalize(cross(dFdx(vView), dFdy(vView)));
+  if(dot(N, -vView) < 0.0) N = -N;            // force normal to face camera
+  float nl  = max(dot(N, uLight ), 0.0);
+  float nl2 = max(dot(N, uLight2), 0.0);
+  float light = 0.34 + 0.60*nl + 0.18*nl2;
+  o = vec4(vColor*light, 1.0);
+}`);
+const sceneU = {
+  proj: gl.getUniformLocation(sceneProg,"uProj"),
+  view: gl.getUniformLocation(sceneProg,"uView"),
+  model:gl.getUniformLocation(sceneProg,"uModel"),
+  light:gl.getUniformLocation(sceneProg,"uLight"),
+  light2:gl.getUniformLocation(sceneProg,"uLight2"),
+};
+
+// ---- post program: nearest upscale + Bayer dither + palette quantization ---
+const postProg = program(`#version 300 es
+out vec2 vUv;
+void main(){
+  vUv = vec2(gl_VertexID==2 ? 2.0 : 0.0, gl_VertexID==1 ? 2.0 : 0.0);
+  gl_Position = vec4(vUv*2.0-1.0, 0.0, 1.0);
+}`,`#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uTex;
+uniform vec2 uLowRes;
+uniform float uDither;   // 0..1
+uniform float uPattern;  // 1 or 2
+uniform float uLevels;   // quantization steps per channel
+const float bayer[16] = float[16](
+   0.0, 8.0, 2.0,10.0,
+  12.0, 4.0,14.0, 6.0,
+   3.0,11.0, 1.0, 9.0,
+  15.0, 7.0,13.0, 5.0);
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  ivec2 p = ivec2(floor(vUv*uLowRes / uPattern));
+  int idx = (p.y & 3)*4 + (p.x & 3);
+  float b = (bayer[idx]+0.5)/16.0 - 0.5;      // -0.5 .. 0.5
+  float steps = max(uLevels-1.0, 1.0);
+  c += b * uDither / steps;                   // dither offset of one quant step
+  c = clamp(c, 0.0, 1.0);
+  c = floor(c*steps + 0.5)/steps;             // quantize
+  o = vec4(c, 1.0);
+}`);
+const postU = {
+  tex: gl.getUniformLocation(postProg,"uTex"),
+  lowRes: gl.getUniformLocation(postProg,"uLowRes"),
+  dither: gl.getUniformLocation(postProg,"uDither"),
+  pattern:gl.getUniformLocation(postProg,"uPattern"),
+  levels: gl.getUniformLocation(postProg,"uLevels"),
+};
+
+//============================================================================
+// VAO upload
+//============================================================================
+function uploadMesh(mesh){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const pb=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.pos),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  const cb=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,cb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.col),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+  gl.bindVertexArray(null);
+  return { vao, count: mesh.pos.length/3 };
+}
+
+//============================================================================
+// build the test scene (static) + a racer
+//============================================================================
+const TILES = [];
+function buildScene(){
+  const m = Mesh();
+  // big grass slab
+  addBox(m, M4.translate(9,-0.3,0), 70,0.6,50, PAL.grass);
+  // a second grass tone patch for variety
+  addBox(m, M4.translate(9,-0.28,8), 30,0.6,10, shade(PAL.grass,0.88));
+
+  // floating track of chunky tiles
+  for(let i=0;i<12;i++){
+    const x=i*2.3, z=Math.sin(i*0.55)*1.6;
+    TILES.push([x,z]);
+    const col = (i%2===0)? PAL.track : shade(PAL.track,0.9);
+    addBox(m, M4.translate(x,0,z), 2.0,0.4,2.0, col);
+    // little support stub so tiles read as floating platforms
+    addBox(m, M4.translate(x,-0.6,z), 0.5,1.2,0.5, shade(PAL.track,0.7));
+  }
+
+  // start gate on first tile
+  const g0=TILES[0];
+  addBox(m, M4.translate(g0[0]-0.8,1.1,g0[1]-0.9), 0.35,2.2,0.35, PAL.blue);
+  addBox(m, M4.translate(g0[0]-0.8,1.1,g0[1]+0.9), 0.35,2.2,0.35, PAL.blue);
+  addBox(m, M4.translate(g0[0]-0.8,2.3,g0[1]),     0.35,0.5,2.3, PAL.yellow);
+  addCone(m,M4.translate(g0[0]-0.8,2.6,g0[1]),     0.35,0.6,PAL.red,6);
+
+  // finish arch on last tile
+  const gN=TILES[TILES.length-1];
+  addBox(m, M4.translate(gN[0]+0.8,1.4,gN[1]-1.0), 0.4,2.8,0.4, PAL.purple);
+  addBox(m, M4.translate(gN[0]+0.8,1.4,gN[1]+1.0), 0.4,2.8,0.4, PAL.purple);
+  addBox(m, M4.translate(gN[0]+0.8,2.9,gN[1]),     0.4,0.5,2.6, PAL.red);
+  // flags on the arch
+  for(let f=0;f<3;f++){
+    const fz = gN[1]-0.8 + f*0.8;
+    addBox(m, M4.mul(M4.translate(gN[0]+0.8,3.35,fz),M4.rotZ(0.2)), 0.5,0.35,0.05, f%2?PAL.yellow:PAL.white);
+  }
+
+  // bleachers of bobbing blob spectators (static here, bob comes in M6)
+  for(let s=0;s<14;s++){
+    const x = (s%7)*3.2 - 1, z = -5.5 - Math.floor(s/7)*1.6, y = 0.4 + Math.floor(s/7)*0.8;
+    const cols=[PAL.red,PAL.blue,PAL.yellow,PAL.purple,PAL.orange];
+    addSphere(m, M4.mul(M4.translate(x,y,z),M4.scale(1,1.2,1)), 0.5, cols[s%5], 4,6, 0.14);
+  }
+  // bleacher stand box
+  addBox(m, M4.translate(9,-0.2,-6.7), 20,1.0,2.4, shade(PAL.purple,0.42));
+
+  // low-poly clouds
+  for(const c of [[2,7,-10],[14,8,-8],[20,6,-12],[-4,7,4]]){
+    addSphere(m, M4.translate(c[0],c[1],c[2]),1.3,PAL.white,4,6,0.18);
+    addSphere(m, M4.translate(c[0]+1.4,c[1]-0.2,c[2]),1.0,PAL.white,4,6,0.18);
+    addSphere(m, M4.translate(c[0]-1.3,c[1]-0.3,c[2]),0.9,PAL.white,4,6,0.18);
+  }
+
+  // bunting line between the gates
+  for(let i=0;i<10;i++){
+    const t=i/9, x = g0[0]-0.8 + t*(gN[0]-g0[0]+1.6);
+    const sag = Math.sin(t*Math.PI)*0.6;
+    const cols=[PAL.red,PAL.yellow,PAL.blue,PAL.white,PAL.orange];
+    addBox(m, M4.mul(M4.translate(x,3.1-sag,-1.4),M4.rotZ(0.1)), 0.22,0.3,0.05, cols[i%5]);
+  }
+
+  return uploadMesh(m);
+}
+
+// Racer: lumpy body, head, googly eyes, noodle limbs, derpy face, a hat.
+// Built in local space, feet at y=0, facing +X.  Under ~210 tris.
+function buildRacer(teamCol){
+  const body = Mesh();
+  const skin = shade(PAL.orange, 1.05);
+  const dark = shade(teamCol, 0.6);
+
+  // legs (stubby noodles, splayed feet are the wide bottoms)
+  addBox(body, M4.mul(M4.translate(-0.05,0.17,-0.22),M4.rotZ(0.1)), 0.26,0.38,0.3, dark);
+  addBox(body, M4.mul(M4.translate( 0.05,0.17, 0.22),M4.rotZ(-0.1)),0.26,0.38,0.3, dark);
+
+  // lopsided body
+  addSphere(body, M4.mul(M4.translate(0,0.70,0),M4.scale(0.95,1.08,0.9)), 0.52, teamCol, 4,5, 0.14);
+
+  // arms (noodle, lopsided)
+  addBox(body, M4.mul(M4.translate(0.0,0.82,-0.52),M4.rotX(-0.5)), 0.17,0.5,0.17, teamCol);
+  addBox(body, M4.mul(M4.translate(0.0,0.86, 0.52),M4.rotX( 0.7)), 0.17,0.5,0.17, teamCol);
+
+  // head (slightly tilted, lumpy)
+  const headY=1.40;
+  addSphere(body, M4.mul(M4.translate(0.02,headY,0),M4.rotZ(0.08)), 0.4, skin, 4,5, 0.1);
+
+  // eye whites on the +X (front) face
+  addSphere(body, M4.translate(0.30,headY+0.08,-0.17), 0.15, PAL.white, 2,4, 0.04);
+  addSphere(body, M4.translate(0.31,headY+0.10, 0.17), 0.15, PAL.white, 2,4, 0.04);
+
+  // nose
+  addCone(body, M4.mul(M4.translate(0.40,headY-0.04,0),M4.rotZ(-Math.PI/2)), 0.1,0.25, PAL.orange, 4);
+  // derpy mouth
+  addBox(body, M4.translate(0.37,headY-0.22,0), 0.06,0.07,0.28, shade(PAL.shadow,1.3));
+
+  // silly feature: a pointy party hat
+  addCone(body, M4.translate(0.0,headY+0.34,0), 0.3,0.6, PAL.purple, 6);
+
+  // pupils are a SEPARATE mesh so the googly eyes can jiggle independently
+  const pupils = Mesh();
+  addSphere(pupils, M4.translate(0.42,headY+0.08,-0.17), 0.07, PAL.shadow, 2,3, 0);
+  addSphere(pupils, M4.translate(0.43,headY+0.10, 0.17), 0.07, PAL.shadow, 2,3, 0);
+
+  const tris = body.pos.length/9 + pupils.pos.length/9;
+  return { body: uploadMesh(body), pupils: uploadMesh(pupils), tris };
+}
+
+const sceneGeo = buildScene();
+const racerGeo = buildRacer(PAL.red);
+document.getElementById("hud").textContent = "Racer tris: "+racerGeo.tris;
+
+//============================================================================
+// low-res render target
+//============================================================================
+let target=null;
+function makeTarget(w,h){
+  if(target){ gl.deleteTexture(target.tex); gl.deleteFramebuffer(target.fb); gl.deleteRenderbuffer(target.rb); }
+  const tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const fb=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  const rb=gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER,rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,rb);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  target={tex,fb,rb,w,h};
+}
+
+//============================================================================
+// settings state + canvas sizing
+//============================================================================
+const settings = { internalW:320, dither:0.6, pattern:1, levels:6 };
+let lowW=320, lowH=180;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const cw = Math.floor(innerWidth*dpr), ch = Math.floor(innerHeight*dpr);
+  if(canvas.width!==cw || canvas.height!==ch){ canvas.width=cw; canvas.height=ch; }
+  lowW = settings.internalW;
+  lowH = Math.max(1, Math.round(settings.internalW * (ch/cw)));
+  if(!target || target.w!==lowW || target.h!==lowH) makeTarget(lowW,lowH);
+}
+window.addEventListener("resize",resize);
+
+//============================================================================
+// render loop
+//============================================================================
+const keyLightWorld  = norm3([0.5,1.0,0.35]);
+const fillLightWorld = norm3([-0.6,0.4,-0.5]);
+function norm3(v){ const l=Math.hypot(v[0],v[1],v[2]); return [v[0]/l,v[1]/l,v[2]/l]; }
+function viewDir(view, w){ // transform a world direction into view space (rotation only)
+  return norm3([ view[0]*w[0]+view[4]*w[1]+view[8]*w[2],
+                 view[1]*w[0]+view[5]*w[1]+view[9]*w[2],
+                 view[2]*w[0]+view[6]*w[1]+view[10]*w[2] ]);
+}
+
+function frame(ms){
+  const t = ms/1000;
+  resize();
+
+  // camera: slow orbit around the middle of the track
+  const cx = TILES[5][0], cz = 0;
+  const ang = t*0.25;
+  const eye = [cx + Math.cos(ang)*15, 8.5 + Math.sin(t*0.5)*0.5, cz + Math.sin(ang)*15];
+  const view = M4.lookAt(eye,[cx,1.4,cz],[0,1,0]);
+  const proj = M4.perspective(Math.PI/4.2, lowW/lowH, 0.1, 200);
+
+  // ---- scene pass into low-res FBO ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb);
+  gl.viewport(0,0,lowW,lowH);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(PAL.sky[0],PAL.sky[1],PAL.sky[2],1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  gl.useProgram(sceneProg);
+  gl.uniformMatrix4fv(sceneU.proj,false,proj);
+  gl.uniformMatrix4fv(sceneU.view,false,view);
+  gl.uniform3fv(sceneU.light,  viewDir(view,keyLightWorld));
+  gl.uniform3fv(sceneU.light2, viewDir(view,fillLightWorld));
+
+  // static scene
+  gl.uniformMatrix4fv(sceneU.model,false,M4.ident());
+  gl.bindVertexArray(sceneGeo.vao);
+  gl.drawArrays(gl.TRIANGLES,0,sceneGeo.count);
+
+  // racer on tile 3, with idle bob + squash/stretch
+  const stand = TILES[3];
+  const bob = Math.sin(t*2.4)*0.09;
+  const sq  = 1 + Math.sin(t*2.4)*0.05;        // vertical squash/stretch
+  const sxz = 1 - (sq-1)*0.6;
+  const racerM = M4.mul(M4.mul(
+      M4.translate(stand[0], 0.2+bob, stand[1]),
+      M4.scale(sxz,sq,sxz)), M4.rotY(Math.sin(t*0.8)*0.15));
+  gl.uniformMatrix4fv(sceneU.model,false,racerM);
+  gl.bindVertexArray(racerGeo.body.vao);
+  gl.drawArrays(gl.TRIANGLES,0,racerGeo.body.count);
+
+  // pupils jiggle (googly eyes)
+  const jig = M4.translate(Math.sin(t*5)*0.02, Math.cos(t*6.3)*0.03, 0);
+  gl.uniformMatrix4fv(sceneU.model,false,M4.mul(racerM,jig));
+  gl.bindVertexArray(racerGeo.pupils.vao);
+  gl.drawArrays(gl.TRIANGLES,0,racerGeo.pupils.count);
+
+  // ---- post pass to screen ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(postProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,target.tex);
+  gl.uniform1i(postU.tex,0);
+  gl.uniform2f(postU.lowRes,lowW,lowH);
+  gl.uniform1f(postU.dither,settings.dither);
+  gl.uniform1f(postU.pattern,settings.pattern);
+  gl.uniform1f(postU.levels,settings.levels);
+  gl.bindVertexArray(null);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  requestAnimationFrame(frame);
+}
+
+//============================================================================
+// UI wiring
+//============================================================================
+const $=s=>document.querySelector(s);
+$("#resRow").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  settings.internalW=+b.dataset.res;
+  [...$("#resRow").children].forEach(x=>x.classList.toggle("on",x===b));
+});
+$("#patRow").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  settings.pattern=+b.dataset.pat;
+  [...$("#patRow").children].forEach(x=>x.classList.toggle("on",x===b));
+});
+$("#dither").addEventListener("input",e=>{
+  settings.dither=+e.target.value/100; $("#ditherVal").textContent=e.target.value+"%";
+});
+$("#levels").addEventListener("input",e=>{
+  settings.levels=+e.target.value; $("#levVal").textContent=e.target.value;
+});
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
